@@ -2,75 +2,86 @@ import streamlit as st
 from PIL import Image, ImageOps
 import numpy as np
 import tensorflow as tf
-import requests
-from io import BytesIO
+import gdown
+import os
 
-# Page config
 st.set_page_config(page_title="Iron Rust Detector", page_icon="🔩", layout="centered")
 
-# Custom CSS for dark Maybot-style theme
+# Dark modern theme
 st.markdown("""
     <style>
     .main { background: linear-gradient(135deg, #0f0f23, #1a1a2e); color: white; }
-    h1 { background: linear-gradient(90deg, #00ffcc, #ff00cc); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-    .footer { text-align: center; margin-top: 50px; color: #00ffcc; font-weight: bold; }
+    h1 { background: linear-gradient(90deg, #00ffcc, #ff00cc); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-size: 2.8em; }
+    .footer { text-align: center; margin-top: 60px; color: #00ffcc; font-weight: bold; }
     </style>
 """, unsafe_allow_html=True)
 
-# Header with your logo and title
-col1, col2 = st.columns([1, 4])
+# Header with logo
+col1, col2 = st.columns([1, 5])
 with col1:
     try:
-        logo = Image.open("illuminat.image.png")  # Put your logo in the same folder
-        st.image(logo, width=100)
+        logo = Image.open("illuminat.image.png")
+        st.image(logo, width=90)
     except:
-        st.image("https://via.placeholder.com/100", width=100)  # fallback
+        pass  # fallback if logo missing
 
 with col2:
     st.title("Iron Rust Detector")
 
-st.markdown("Upload a photo of iron to check if it is **rusted** or **not rusted**.")
+st.write("Upload a clear photo of iron to detect rust")
 
-# Load the model (cached so it loads only once)
+# Load model from Google Drive (change the file_id)
 @st.cache_resource
 def load_model():
-    model = tf.keras.models.load_model("rust_model.h5")
+    file_id = "YOUR_GOOGLE_DRIVE_FILE_ID_HERE"   # ← Replace with your actual File ID
+    url = f"https://drive.google.com/uc?id={file_id}"
+    model_path = "rust_model.h5"
+    
+    if not os.path.exists(model_path):
+        with st.spinner("Downloading model (first time only, may take 30-60 seconds)..."):
+            gdown.download(url, model_path, quiet=False)
+    
+    model = tf.keras.models.load_model(model_path)
     return model
 
-model = load_model()
+try:
+    model = load_model()
+except Exception as e:
+    st.error(f"Failed to load model: {e}")
+    st.stop()
 
-# Upload image
-uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
+# Upload section
+uploaded_file = st.file_uploader("Choose an image of iron...", type=["jpg", "jpeg", "png"])
 
 if uploaded_file is not None:
     image = Image.open(uploaded_file).convert("RGB")
     st.image(image, caption="Uploaded Image", use_column_width=True)
 
-    # Preprocess the image (Teachable Machine usually uses 224x224)
+    # Preprocessing (standard for Teachable Machine)
     size = (224, 224)
     image = ImageOps.fit(image, size, Image.Resampling.LANCZOS)
     image_array = np.asarray(image)
-    normalized_image_array = (image_array.astype(np.float32) / 127.5) - 1
+    normalized = (image_array.astype(np.float32) / 127.5) - 1
     data = np.ndarray(shape=(1, 224, 224, 3), dtype=np.float32)
-    data[0] = normalized_image_array
+    data[0] = normalized
 
-    # Predict
-    prediction = model.predict(data)
+    # Prediction
+    with st.spinner("Analyzing..."):
+        prediction = model.predict(data)[0]
     
-    # Assuming Class 0 = Not Rusted, Class 1 = Rusted (check your classes order)
-    class_names = ["Not Rusted", "Rusted"]
-    confidence = prediction[0] * 100
+    class_names = ["Not Rusted", "Rusted"]   # Change order if your Class 0 is Rusted
 
-    st.subheader("Prediction Result:")
-    for i, class_name in enumerate(class_names):
-        st.markdown(f"**{class_name}**: {confidence[i]:.1f}%")
+    st.subheader("Result:")
+    for i, name in enumerate(class_names):
+        conf = prediction[i] * 100
+        st.progress(conf / 100, text=f"{name}: {conf:.1f}%")
 
-    # Highlight the highest confidence
-    max_idx = np.argmax(confidence)
+    # Highlight main result
+    max_idx = np.argmax(prediction)
     if max_idx == 1:
-        st.error(f"🔴 **Rusted** with {confidence[1]:.1f}% confidence")
+        st.error(f"🔴 **Rusted** — Confidence: {prediction[1]*100:.1f}%")
     else:
-        st.success(f"🟢 **Not Rusted** with {confidence[0]:.1f}% confidence")
+        st.success(f"🟢 **Not Rusted** — Confidence: {prediction[0]*100:.1f}%")
 
 # Footer
 st.markdown('<div class="footer">Made by Mayon Oberoi • Illuminat</div>', unsafe_allow_html=True)
