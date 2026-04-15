@@ -6,4 +6,4 @@ with open("rust-detector.html", "r", encoding="utf-8") as f:
     html_content = f.read()
 
 # Render it in the app
-components.html(html_content, height=700, scrolling=True)
+components.html(html_content, height=600, scrolling=True)
